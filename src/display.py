@@ -69,8 +69,10 @@ class ConsultantDisplay:
 
         # Header
         lines.append(self._box_top(width))
-        lines.append(self._box_center(
-            self._c(_Colors.BOLD + _Colors.CYAN, "CAPABILITY BOUNDARY CONSULTANT"), width
+        mode_tag = self._c(_Colors.DIM, f"[{report.analysis_mode}]")
+        lines.append(self._box_line(
+            f"{self._c(_Colors.BOLD + _Colors.CYAN, 'CAPABILITY BOUNDARY CONSULTANT')}  {mode_tag}",
+            width,
         ))
         lines.append(self._box_separator(width))
 
@@ -149,9 +151,21 @@ class ConsultantDisplay:
             for i, rp in enumerate(report.risk_paths):
                 color = self._risk_color(rp.level)
                 tag = self._c(color, f"[{rp.level.value.upper()}]")
-                lines.append(self._box_line(
-                    f"  {tag} {self._c(_Colors.BOLD, rp.name)}", width
-                ))
+
+                # Relevance score from LLM (if available)
+                relevance_info = report.risk_relevance.get(rp.name)
+                if relevance_info:
+                    rel = relevance_info["relevance"]
+                    rel_color = _Colors.RED if rel >= 0.7 else (_Colors.YELLOW if rel >= 0.4 else _Colors.DIM)
+                    rel_tag = self._c(rel_color, f"relevance: {rel:.0%}")
+                    lines.append(self._box_line(
+                        f"  {tag} {self._c(_Colors.BOLD, rp.name)}  ({rel_tag})", width
+                    ))
+                else:
+                    lines.append(self._box_line(
+                        f"  {tag} {self._c(_Colors.BOLD, rp.name)}", width
+                    ))
+
                 lines.append(self._box_line(
                     f"    {rp.description}", width
                 ))
@@ -168,6 +182,12 @@ class ConsultantDisplay:
                 if len(rp.attack_scenario) > 100:
                     lines.append(self._box_line(
                         f"      {self._c(_Colors.DIM, rp.attack_scenario[100:])}",
+                        width,
+                    ))
+                # LLM reasoning for relevance
+                if relevance_info and relevance_info.get("reasoning"):
+                    lines.append(self._box_line(
+                        f"    Why: {self._c(_Colors.DIM, relevance_info['reasoning'])}",
                         width,
                     ))
                 if i < len(report.risk_paths) - 1:

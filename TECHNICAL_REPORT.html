@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Permission Guard - Technical Report</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --dim: #6c7086;
+    --red: #f38ba8;
+    --green: #a6e3a1;
+    --yellow: #f9e2af;
+    --blue: #89b4fa;
+    --magenta: #cba6f7;
+    --cyan: #89dceb;
+    --white: #ffffff;
+    --border: #45475a;
+    --surface: #181825;
+    --code-bg: #11111b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.7;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    color: var(--cyan);
+    font-size: 1.8rem;
+    border-bottom: 2px solid var(--cyan);
+    padding-bottom: 0.5rem;
+    margin: 2rem 0 0.5rem 0;
+  }
+  h1:first-of-type { margin-top: 0; }
+
+  h2 {
+    color: var(--magenta);
+    font-size: 1.3rem;
+    margin: 1.8rem 0 0.8rem 0;
+  }
+
+  h3 {
+    color: var(--yellow);
+    font-size: 1.1rem;
+    margin: 1.2rem 0 0.5rem 0;
+  }
+
+  p { margin: 0.6rem 0; }
+
+  a { color: var(--blue); }
+
+  strong { color: var(--white); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  th {
+    background: var(--surface);
+    color: var(--cyan);
+    text-align: left;
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--border);
+  }
+  td {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+  }
+  tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+
+  code {
+    background: var(--code-bg);
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    font-size: 0.88em;
+    color: var(--yellow);
+  }
+
+  /* Terminal panel */
+  .terminal {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+    font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .terminal .box { color: var(--border); }
+
+  /* Terminal color classes matching ANSI codes */
+  .t-red { color: var(--red); }
+  .t-green { color: var(--green); }
+  .t-yellow { color: var(--yellow); }
+  .t-blue { color: var(--blue); }
+  .t-magenta { color: var(--magenta); }
+  .t-cyan { color: var(--cyan); }
+  .t-white { color: var(--white); }
+  .t-dim { color: var(--dim); }
+  .t-bold { font-weight: 700; }
+
+  /* Specific combined styles */
+  .t-critical { color: var(--red); font-weight: 700; }
+  .t-high { color: var(--red); }
+  .t-medium { color: var(--yellow); }
+
+  /* Color swatch */
+  .swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  .subtitle {
+    color: var(--dim);
+    font-size: 1rem;
+    margin-top: 0;
+    margin-bottom: 2rem;
+  }
+
+  .cmd {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+    margin: 0.8rem 0;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.85rem;
+    color: var(--green);
+  }
+  .cmd .prompt { color: var(--dim); }
+
+  .note-box {
+    background: rgba(137, 220, 235, 0.08);
+    border-left: 3px solid var(--cyan);
+    padding: 0.8rem 1.2rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .warn-box {
+    background: rgba(249, 226, 175, 0.08);
+    border-left: 3px solid var(--yellow);
+    padding: 0.8rem 1.2rem;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .pipeline {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+    font-family: 'Cascadia Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    white-space: pre;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.5rem 0;
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .comparison-grid .terminal { margin: 0; }
+  .comparison-label {
+    color: var(--cyan);
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 0.3rem;
+  }
+
+  /* Deviation bar styles */
+  .dev-bar {
+    display: inline-block;
+    font-family: monospace;
+  }
+  .dev-filled-green { color: var(--green); }
+  .dev-filled-yellow { color: var(--yellow); }
+  .dev-filled-red { color: var(--red); }
+  .dev-empty { color: var(--dim); }
+</style>
+</head>
+<body>
+
+<h1>Agent Permission Guard: Technical Report</h1>
+<p class="subtitle">Capability Boundary Consultant for AI Agent Permission Over-Authorization</p>
+
+<hr>
+
+<h1>1. Research Background</h1>
+
+<h2>1.1 Problem Statement</h2>
+<p>As users interact with AI Agents daily, they gradually grant more permissions through habitual approval. This creates an accumulation of <strong>high-risk permission combinations</strong> that allow agents to autonomously execute dangerous actions.</p>
+
+<p>Key findings from Anthropic's analysis of millions of Claude Code sessions:</p>
+<table>
+  <tr><th>Metric</th><th>Finding</th></tr>
+  <tr><td>Session duration</td><td>Nearly doubled: &lt;25 min (2025) &rarr; &gt;45 min (2026)</td></tr>
+  <tr><td>Auto-approval (new users, &lt;50 interactions)</td><td>~20% of sessions</td></tr>
+  <tr><td>Auto-approval (experienced, &gt;750 interactions)</td><td>&gt;40% of sessions</td></tr>
+</table>
+
+<h2>1.2 Root Causes</h2>
+<p><strong>1. Too many configurations and invisible combinations</strong> &mdash; Users cannot mentally model the interaction effects of 7+ permission categories across 3 scope levels.</p>
+<p><strong>2. Users are not clearly aware of high-risk actions</strong> &mdash; Users understand "payment risk" but do not recognize equally high risks in actions like automatically downloading files, logging into unfamiliar websites, modifying settings, or sending messages externally.</p>
+
+<h2>1.3 Industry Consensus</h2>
+<table>
+  <tr><th>Party</th><th>Responsibility</th></tr>
+  <tr><td><strong>System</strong></td><td>Initial access with minimal permissions</td></tr>
+  <tr><td><strong>User</strong></td><td>Decision-making on delegation for one-time tasks</td></tr>
+  <tr><td><strong>Agent</strong></td><td>Independently assess risks and proactively seek verification</td></tr>
+</table>
+<p>This PoC addresses the <strong>System</strong> layer: automatically analyzing task-permission alignment and advising users before execution begins.</p>
+
+<hr>
+
+<h1>2. Project Objective</h1>
+
+<p>Build a <strong>Capability Boundary Consultant</strong> that, when an agent starts a task, automatically generates:</p>
+<p>1. <strong>Task intent vs. actual agent capability</strong> (deviation index)<br>
+   2. <strong>Risk roadmap</strong> of the current permission combination<br>
+   3. <strong>Convergence suggestions</strong> for agent permission configuration</p>
+
+<h2>2.1 Key Innovation Points</h2>
+<table>
+  <tr><th>AS IS</th><th>TO BE</th></tr>
+  <tr><td>Users review complex permission configurations themselves</td><td>System informs users of possible risk paths in the current configuration</td></tr>
+  <tr><td>System only notifies users of risk</td><td>System provides the minimum permission combination required for the task</td></tr>
+</table>
+
+<hr>
+
+<h1>3. System Architecture</h1>
+
+<h2>3.1 Project Structure</h2>
+<div class="terminal">Agent-Permission-Guard/
+├── main.py                      <span class="t-dim"># CLI entry point (interactive + non-interactive + JSON)</span>
+├── requirements.txt             <span class="t-dim"># openai>=1.0.0</span>
+├── src/
+│   ├── models.py                <span class="t-dim"># Core enums and dataclasses</span>
+│   ├── task_analyzer.py         <span class="t-dim"># Keyword-based intent extraction (deterministic fallback)</span>
+│   ├── <span class="t-cyan">llm_analyzer.py</span>          <span class="t-dim"># LLM-backed intent extraction + risk relevance (gpt-5-mini)</span>
+│   ├── permission_config.py     <span class="t-dim"># JSON permission profile loader with validation</span>
+│   ├── risk_engine.py           <span class="t-dim"># Rule-based risk path detection + deviation index</span>
+│   ├── consultant.py            <span class="t-dim"># Orchestrator: analysis pipeline coordinator</span>
+│   └── display.py               <span class="t-dim"># ANSI-colored terminal panel renderer</span>
+├── configs/
+│   ├── overpermissioned.json    <span class="t-dim"># All 7 permissions UNRESTRICTED (demo default)</span>
+│   ├── developer.json           <span class="t-dim"># Moderate developer workflow</span>
+│   └── minimal_research.json    <span class="t-dim"># Tightly scoped for research tasks</span>
+└── tests/                       <span class="t-dim"># 47 unit + integration tests</span></div>
+<p><strong>Total:</strong> 22 files, 2,305 lines of code</p>
+
+<h2>3.2 Analysis Pipeline</h2>
+<div class="pipeline"><span class="t-white t-bold">User enters task description</span>
+        │
+        ▼
+┌─────────────────────────────┐
+│  <span class="t-magenta t-bold">1. TASK INTENT ANALYSIS</span>    │  <span class="t-cyan">LLM (gpt-5-mini)</span> ──→ intents + minimum permissions
+│     <span class="t-dim">src/llm_analyzer.py</span>       │  <span class="t-dim">Fallback: keyword regex matching</span>
+└────────────┬────────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│  <span class="t-magenta t-bold">2. PERMISSION COMPARISON</span>   │  Load JSON profile → compare required vs current
+│     <span class="t-dim">src/consultant.py</span>         │  Output: <span class="t-red">excess permissions</span> list
+└────────────┬────────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│  <span class="t-magenta t-bold">3. RISK PATH DETECTION</span>     │  7 predefined dangerous combinations
+│     <span class="t-dim">src/risk_engine.py</span>        │  Only flags paths involving <span class="t-red">EXCESS</span> permissions
+└────────────┬────────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│  <span class="t-magenta t-bold">4. RISK RELEVANCE SCORING</span>  │  <span class="t-cyan">LLM</span> rates each risk path's plausibility (0-1)
+│     <span class="t-dim">src/llm_analyzer.py</span>       │  Output: relevance scores + reasoning per risk
+└────────────┬────────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│  <span class="t-magenta t-bold">5. CONVERGENCE SUGGESTIONS</span> │  <span class="t-red t-bold">DISABLE</span> (not needed) or <span class="t-yellow t-bold">RESTRICT</span> (scope too broad)
+│     <span class="t-dim">src/consultant.py</span>         │  Sorted: disables first, then restrictions
+└────────────┬────────────────┘
+             │
+             ▼
+┌─────────────────────────────┐
+│  <span class="t-magenta t-bold">6. USER DECISION</span>           │  <span class="t-green">[A]</span> Accept all   <span class="t-yellow">[P]</span> Partial   <span class="t-red">[K]</span> Keep current
+│     <span class="t-dim">main.py</span>                   │  Non-blocking: user always proceeds regardless
+└─────────────────────────────┘</div>
+
+<h2>3.3 Dual Analysis Modes</h2>
+<table>
+  <tr><th>Feature</th><th>LLM Mode (default)</th><th>Keyword Mode (<code>--no-llm</code>)</th></tr>
+  <tr><td>Model</td><td>gpt-5-mini</td><td>None</td></tr>
+  <tr><td>Intent extraction</td><td>Semantic understanding</td><td>Regex word-boundary matching</td></tr>
+  <tr><td>Permission details</td><td>Context-aware explanations</td><td>Template descriptions</td></tr>
+  <tr><td>Risk relevance</td><td>Per-path scoring with reasoning</td><td>Not available</td></tr>
+  <tr><td>Confidence</td><td>LLM self-assessed (0.0-1.0)</td><td>1.0 if matched, 0.0 if fallback</td></tr>
+  <tr><td>Speed</td><td>~3-5 seconds</td><td>&lt;0.01 seconds</td></tr>
+  <tr><td>Dependency</td><td>OPENAI_API_KEY required</td><td>None</td></tr>
+</table>
+
+<hr>
+
+<h1>4. Data Models</h1>
+
+<h2>4.1 Permission Categories (7)</h2>
+<table>
+  <tr><th>Category</th><th>Risk Weight</th><th>Description</th></tr>
+  <tr><td><code>web_access</code></td><td>2</td><td>Browsing websites, fetching web content</td></tr>
+  <tr><td><code>file_read</code></td><td>1</td><td>Reading files from the filesystem</td></tr>
+  <tr><td><code>file_write</code></td><td>2</td><td>Writing/creating files on the filesystem</td></tr>
+  <tr><td><code>shell_execution</code></td><td>3</td><td>Running shell/terminal commands</td></tr>
+  <tr><td><code>skill_connections</code></td><td>2</td><td>Using integrated skills (email, Slack, git, cloud)</td></tr>
+  <tr><td><code>network_outbound</code></td><td>3</td><td>Making outbound HTTP/network requests</td></tr>
+  <tr><td><code>system_modification</code></td><td>3</td><td>Changing system settings, env vars, configs</td></tr>
+</table>
+<p>Scope levels: <span class="t-red">UNRESTRICTED</span> (weight &times;2), <span class="t-yellow">LIMITED</span> (base weight), <span class="t-green">DISABLED</span> (0)</p>
+
+<h2>4.2 Risk Path Definitions (7)</h2>
+<table>
+  <tr><th>Risk Path</th><th>Severity</th><th>Permission Combination</th></tr>
+  <tr><td>Data Exfiltration</td><td><span class="t-critical">CRITICAL</span></td><td>file_read + network_outbound</td></tr>
+  <tr><td>Data Exfiltration via Skills</td><td><span class="t-critical">CRITICAL</span></td><td>file_read + skill_connections</td></tr>
+  <tr><td>Remote Code Execution</td><td><span class="t-critical">CRITICAL</span></td><td>web_access + shell_execution</td></tr>
+  <tr><td>Supply Chain Attack</td><td><span class="t-critical">CRITICAL</span></td><td>web_access + file_write + shell_execution</td></tr>
+  <tr><td>Local Filesystem Compromise</td><td><span class="t-high">HIGH</span></td><td>web_access + file_write</td></tr>
+  <tr><td>Privilege Escalation</td><td><span class="t-high">HIGH</span></td><td>shell_execution + system_modification</td></tr>
+  <tr><td>Persistent Backdoor</td><td><span class="t-medium">MEDIUM</span></td><td>file_write + shell_execution</td></tr>
+</table>
+
+<h2>4.3 Deviation Index Formula</h2>
+<div class="terminal">deviation_index = weighted_excess / weighted_total
+
+where:
+  weighted_excess = sum of risk_weight for each <span class="t-red">excess</span> permission
+                  + half risk_weight for required permissions with <span class="t-red">UNRESTRICTED</span> scope
+  weighted_total  = sum of risk_weight for all active permissions
+
+If task confidence &lt; 0.5: deviation_index *= 0.5 <span class="t-dim">(dampened)</span></div>
+
+<hr>
+
+<h1>5. Terminal Color Coding Reference</h1>
+
+<h2>5.1 Complete Color Legend</h2>
+<table>
+  <tr><th>Element</th><th>Color</th><th>Preview</th></tr>
+  <tr><td>Panel header</td><td>Cyan + Bold</td><td><span class="t-cyan t-bold">CAPABILITY BOUNDARY CONSULTANT</span></td></tr>
+  <tr><td>Mode tag [llm] / [keyword]</td><td>Dim (gray)</td><td><span class="t-dim">[llm]</span></td></tr>
+  <tr><td>Section headers (1-5)</td><td>Magenta + Bold</td><td><span class="t-magenta t-bold">1. TASK INTENT ANALYSIS</span></td></tr>
+  <tr><td>Task description</td><td>White + Bold</td><td><span class="t-white t-bold">Help me search online for...</span></td></tr>
+  <tr><td>Intent markers</td><td>Green</td><td><span class="t-green">+</span> Information Gathering</td></tr>
+  <tr><td>LOW CONFIDENCE warning</td><td>Yellow + Bold</td><td><span class="t-yellow t-bold">LOW CONFIDENCE</span></td></tr>
+  <tr><td>Required permission scope</td><td>Yellow</td><td>[<span class="t-yellow">LIMITED</span>]</td></tr>
+  <tr><td>Permission details / reasons</td><td>Dim (gray)</td><td><span class="t-dim">Read-only access to web search and public pages</span></td></tr>
+  <tr><td>Excess markers</td><td>Red</td><td><span class="t-red">!</span> shell_execution</td></tr>
+  <tr><td>UNRESTRICTED scope</td><td>Red</td><td>[<span class="t-red">UNRESTRICTED</span>]</td></tr>
+  <tr><td>DISABLED scope</td><td>Green</td><td>[<span class="t-green">DISABLED</span>]</td></tr>
+  <tr><td>CRITICAL risk tag</td><td>Red + Bold</td><td><span class="t-critical">[CRITICAL]</span></td></tr>
+  <tr><td>HIGH risk tag</td><td>Red</td><td><span class="t-high">[HIGH]</span></td></tr>
+  <tr><td>MEDIUM risk tag</td><td>Yellow</td><td><span class="t-medium">[MEDIUM]</span></td></tr>
+  <tr><td>Relevance &ge;70%</td><td>Red</td><td>(<span class="t-red">relevance: 85%</span>)</td></tr>
+  <tr><td>Relevance 40-69%</td><td>Yellow</td><td>(<span class="t-yellow">relevance: 55%</span>)</td></tr>
+  <tr><td>Relevance &lt;40%</td><td>Dim (gray)</td><td>(<span class="t-dim">relevance: 20%</span>)</td></tr>
+  <tr><td>Relevance reasoning (Why:)</td><td>Dim (gray)</td><td><span class="t-dim">Why: The task involves fetching web content...</span></td></tr>
+  <tr><td>DISABLE action</td><td>Red + Bold</td><td>[<span class="t-critical">DISABLE</span>]</td></tr>
+  <tr><td>RESTRICT action</td><td>Yellow + Bold</td><td>[<span class="t-yellow t-bold">RESTRICT</span>]</td></tr>
+  <tr><td>Scope transition arrow</td><td>Red &rarr; Green</td><td><span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span></td></tr>
+  <tr><td>Note label</td><td>Cyan + Bold</td><td><span class="t-cyan t-bold">Note:</span></td></tr>
+  <tr><td>[A] Accept all</td><td>Green</td><td><span class="t-green">[A]</span> Accept all suggestions</td></tr>
+  <tr><td>[P] Partially accept</td><td>Yellow</td><td><span class="t-yellow">[P]</span> Partially accept</td></tr>
+  <tr><td>[K] Keep current</td><td>Red</td><td><span class="t-red">[K]</span> Keep current configuration</td></tr>
+</table>
+
+<h2>5.2 Deviation Index Bar</h2>
+<div class="terminal"><span class="t-dim">Range 0-30%:</span>   [<span class="t-green">██████████</span><span class="t-dim">░░░░░░░░░░░░░░░░░░░░</span>] <span class="t-green">25% (LOW)</span>
+<span class="t-dim">Range 31-60%:</span>  [<span class="t-yellow">███████████████</span><span class="t-dim">░░░░░░░░░░░░░░░</span>] <span class="t-yellow">50% (MODERATE)</span>
+<span class="t-dim">Range 61-80%:</span>  [<span class="t-red">██████████████████████</span><span class="t-dim">░░░░░░░░</span>] <span class="t-red">75% (HIGH)</span>
+<span class="t-dim">Range 81-100%:</span> [<span class="t-critical">█████████████████████████████</span><span class="t-dim">░</span>] <span class="t-critical">95% (CRITICAL)</span></div>
+
+<hr>
+
+<h1>6. PoC Demonstration</h1>
+
+<h2>6.1 Use Case 1: Spec Example &mdash; Over-Permissioned Agent + Research Task</h2>
+
+<p><strong>Setup:</strong> Agent has all 7 permissions set to UNRESTRICTED (typical after months of habitual granting)<br>
+<strong>Task:</strong> "Help me search online for information on competitors and summarize it."</p>
+
+<h3>Step 1: Agent initiates task</h3>
+<div class="cmd"><span class="prompt">$</span> python main.py configs/overpermissioned.json \
+    "Help me search online for information on competitors and summarize it"</div>
+
+<h3>Step 2: System analyzes task intent (LLM mode)</h3>
+<div class="terminal"><span class="box">┌──────────────────────────────────────────────────────────────────────────────┐</span>
+<span class="box">│</span> <span class="t-cyan t-bold">CAPABILITY BOUNDARY CONSULTANT</span>  <span class="t-dim">[llm]</span>                                        <span class="box">│</span>
+<span class="box">├──────────────────────────────────────────────────────────────────────────────┤</span>
+<span class="box">│</span> <span class="t-magenta t-bold">1. TASK INTENT ANALYSIS</span>                                                      <span class="box">│</span>
+<span class="box">│</span>   Task: <span class="t-white t-bold">Help me search online for information on competitors and summarize it</span> <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   Detected intents:                                                          <span class="box">│</span>
+<span class="box">│</span>     <span class="t-green">+</span> Information Gathering                                                  <span class="box">│</span>
+<span class="box">│</span>     <span class="t-green">+</span> Content Creation                                                       <span class="box">│</span>
+<span class="box">├──────────────────────────────────────────────────────────────────────────────┤</span></div>
+
+<p>The LLM identifies only <strong>2 permissions</strong> needed (web_access and network_outbound), both at LIMITED scope.</p>
+
+<h3>Step 3: Minimum required permissions</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">2. MINIMUM REQUIRED PERMISSIONS</span>                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-green">+</span> web_access             [<span class="t-yellow">LIMITED</span>]                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">To browse public websites, search engines, news articles, and company</span>    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">pages to collect information about competitors.</span>                          <span class="box">│</span>
+<span class="box">│</span>   <span class="t-green">+</span> network_outbound       [<span class="t-yellow">LIMITED</span>]                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">To make outbound HTTP requests needed to fetch web pages, APIs, or</span>       <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">search results for compiling and summarizing competitor information.</span>      <span class="box">│</span></div>
+
+<h3>Step 4: Excess permissions and deviation index</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">3. EXCESS PERMISSIONS DETECTED</span>                                               <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> web_access             [<span class="t-red">UNRESTRICTED</span>]                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Scope exceeds task needs (LIMITED sufficient)</span>                             <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> file_read              [<span class="t-red">UNRESTRICTED</span>]                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Not required for this task</span>                                               <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> file_write             [<span class="t-red">UNRESTRICTED</span>]                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Not required for this task</span>                                               <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> shell_execution        [<span class="t-red">UNRESTRICTED</span>]                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Not required for this task</span>                                               <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> skill_connections      [<span class="t-red">UNRESTRICTED</span>]                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Not required for this task</span>                                               <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> network_outbound       [<span class="t-red">UNRESTRICTED</span>]                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Scope exceeds task needs (LIMITED sufficient)</span>                             <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> system_modification    [<span class="t-red">UNRESTRICTED</span>]                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Not required for this task</span>                                               <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   Deviation Index: [<span class="t-critical">█████████████████████████</span><span class="t-dim">░░░░░</span>] <span class="t-critical">84% (CRITICAL)</span>           <span class="box">│</span></div>
+
+<h3>Step 5: Risk roadmap with LLM relevance scoring</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">4. RISK ROADMAP</span>                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Remote Code Execution</span>  (<span class="t-dim">relevance: 20%</span>)                         <span class="box">│</span>
+<span class="box">│</span>     Content fetched from the web could be executed as shell commands.         <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">web_access, shell_execution</span>                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: Web access is core to the task. If shell execution is also granted,</span>  <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">fetched content could be executed, but execution is not needed for</span>        <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">research, so relevance is moderate.</span>                                       <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Data Exfiltration</span>  (<span class="t-dim">relevance: 15%</span>)                              <span class="box">│</span>
+<span class="box">│</span>     Local file content could be silently sent to external endpoints.          <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">file_read, network_outbound</span>                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: The task does not require reading local files. Exfiltration is</span>       <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">possible only if the agent is overprivileged or prompt-injected.</span>          <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Data Exfiltration via Skills</span>  (<span class="t-dim">relevance: 12%</span>)                   <span class="box">│</span>
+<span class="box">│</span>     Local file content could be leaked through connected skills.              <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Supply Chain Attack</span>  (<span class="t-dim">relevance: 10%</span>)                              <span class="box">│</span>
+<span class="box">│</span>     Malicious packages could be downloaded, written to disk, and executed.    <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-high">[HIGH]</span> <span class="t-bold">Local Filesystem Compromise</span>  (<span class="t-dim">relevance: 18%</span>)                        <span class="box">│</span>
+<span class="box">│</span>     External content could be written to the local filesystem.                <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-high">[HIGH]</span> <span class="t-bold">Privilege Escalation</span>  (<span class="t-dim">relevance: 6%</span>)                                 <span class="box">│</span>
+<span class="box">│</span>     Shell access + system modification enables privilege escalation.          <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-medium">[MEDIUM]</span> <span class="t-bold">Persistent Backdoor</span>  (<span class="t-dim">relevance: 8%</span>)                               <span class="box">│</span>
+<span class="box">│</span>     File write + shell access enables persistent malware installation.        <span class="box">│</span></div>
+
+<h3>Step 6: Convergence suggestions</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">5. CONVERGENCE SUGGESTIONS</span>                                                   <span class="box">│</span>
+<span class="box">│</span>   1. [<span class="t-critical">DISABLE</span>] file_read                                                     <span class="box">│</span>
+<span class="box">│</span>      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                                                <span class="box">│</span>
+<span class="box">│</span>      <span class="t-dim">Not required for task: Information Gathering, Content Creation</span>           <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   2. [<span class="t-critical">DISABLE</span>] file_write                                                    <span class="box">│</span>
+<span class="box">│</span>      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                                                <span class="box">│</span>
+<span class="box">│</span>      <span class="t-dim">Not required for task: Information Gathering, Content Creation</span>           <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   3. [<span class="t-critical">DISABLE</span>] shell_execution                                               <span class="box">│</span>
+<span class="box">│</span>      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                                                <span class="box">│</span>
+<span class="box">│</span>      <span class="t-dim">Not required for task: Information Gathering, Content Creation</span>           <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   4. [<span class="t-critical">DISABLE</span>] skill_connections                                             <span class="box">│</span>
+<span class="box">│</span>      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                                                <span class="box">│</span>
+<span class="box">│</span>      <span class="t-dim">Not required for task: Information Gathering, Content Creation</span>           <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   5. [<span class="t-critical">DISABLE</span>] system_modification                                           <span class="box">│</span>
+<span class="box">│</span>      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                                                <span class="box">│</span>
+<span class="box">│</span>      <span class="t-dim">Not required for task: Information Gathering, Content Creation</span>           <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   6. [<span class="t-yellow t-bold">RESTRICT</span>] web_access                                                   <span class="box">│</span>
+<span class="box">│</span>      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-yellow">LIMITED</span>                                                 <span class="box">│</span>
+<span class="box">│</span>      <span class="t-dim">Task requires web_access but only with limited scope.</span>                   <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   7. [<span class="t-yellow t-bold">RESTRICT</span>] network_outbound                                              <span class="box">│</span>
+<span class="box">│</span>      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-yellow">LIMITED</span>                                                 <span class="box">│</span>
+<span class="box">│</span>      <span class="t-dim">Task requires network_outbound but only with limited scope.</span>              <span class="box">│</span>
+<span class="box">├──────────────────────────────────────────────────────────────────────────────┤</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-cyan t-bold">Note:</span> The above changes preserve the primary capability of "Information   <span class="box">│</span>
+<span class="box">│</span>   Gathering, Content Creation" while significantly reducing risks both       <span class="box">│</span>
+<span class="box">│</span>   externally and locally. Addresses 4 CRITICAL risk path(s).                 <span class="box">│</span>
+<span class="box">│</span>   Addresses 2 HIGH risk path(s).                                             <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">└──────────────────────────────────────────────────────────────────────────────┘</span></div>
+
+<h3>Step 7: User selection (non-blocking)</h3>
+<div class="terminal"><span class="t-bold">Select an option:</span>
+  <span class="t-green">[A]</span> Accept all suggestions
+  <span class="t-yellow">[P]</span> Partially accept (select which to apply)
+  <span class="t-red">[K]</span> Keep current configuration and continue</div>
+
+<div class="note-box">No interception is performed. Even if the user selects <strong>[K] Keep current</strong>, the task proceeds. The system is advisory only.</div>
+
+<hr>
+
+<h2>6.2 Use Case 2: Code Execution Task (Over-Permissioned Agent + Dev Task)</h2>
+
+<p><strong>Setup:</strong> Same over-permissioned agent (all 7 UNRESTRICTED)<br>
+<strong>Task:</strong> "Run the test suite and fix any failing tests."<br>
+<strong>Key difference:</strong> This task <em>legitimately requires</em> shell_execution, file_read, and file_write &mdash; the system should RESTRICT them, not DISABLE.</p>
+
+<div class="cmd"><span class="prompt">$</span> python main.py configs/overpermissioned.json "Run the test suite and fix any failing tests"</div>
+
+<h3>Intent Analysis &amp; Minimum Permissions</h3>
+<div class="terminal"><span class="box">┌──────────────────────────────────────────────────────────────────────────────┐</span>
+<span class="box">│</span> <span class="t-cyan t-bold">CAPABILITY BOUNDARY CONSULTANT</span>  <span class="t-dim">[llm]</span>                                        <span class="box">│</span>
+<span class="box">├──────────────────────────────────────────────────────────────────────────────┤</span>
+<span class="box">│</span> <span class="t-magenta t-bold">1. TASK INTENT ANALYSIS</span>                                                      <span class="box">│</span>
+<span class="box">│</span>   Task: <span class="t-white t-bold">Run the test suite and fix any failing tests</span>                         <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   Detected intents:                                                          <span class="box">│</span>
+<span class="box">│</span>     <span class="t-green">+</span> Code Execution                                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-green">+</span> File Management                                                        <span class="box">│</span>
+<span class="box">├──────────────────────────────────────────────────────────────────────────────┤</span>
+<span class="box">│</span> <span class="t-magenta t-bold">2. MINIMUM REQUIRED PERMISSIONS</span>                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-green">+</span> shell_execution        [<span class="t-yellow">LIMITED</span>]                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Run the project's test runner (e.g., pytest/npm test) and obtain output.</span> <span class="box">│</span>
+<span class="box">│</span>   <span class="t-green">+</span> file_read              [<span class="t-yellow">LIMITED</span>]                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Read source code, tests, and config files to diagnose failures.</span>          <span class="box">│</span>
+<span class="box">│</span>   <span class="t-green">+</span> file_write             [<span class="t-yellow">LIMITED</span>]                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Modify source/test files to implement fixes for failing tests.</span>           <span class="box">│</span>
+<span class="box">│</span>   <span class="t-green">+</span> network_outbound       [<span class="t-yellow">LIMITED</span>]                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Only if running tests requires installing dependencies.</span>                  <span class="box">│</span></div>
+
+<p><strong>4 permissions required</strong> (vs 2 for research). Shell, file read, file write are all legitimately needed &mdash; the system recognizes this.</p>
+
+<h3>Excess Permissions &amp; Deviation</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">3. EXCESS PERMISSIONS DETECTED</span>                                               <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> web_access             [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> file_read              [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Scope exceeds (LIMITED enough)</span> <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> file_write             [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Scope exceeds (LIMITED enough)</span> <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> shell_execution        [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Scope exceeds (LIMITED enough)</span> <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> skill_connections      [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> network_outbound       [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Scope exceeds (LIMITED enough)</span> <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> system_modification    [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   Deviation Index: [<span class="t-red">█████████████████████</span><span class="t-dim">░░░░░░░░░</span>] <span class="t-red">72% (HIGH)</span>               <span class="box">│</span></div>
+
+<p>Deviation is <strong>72% HIGH</strong> &mdash; lower than the research task's 84% because more permissions are legitimately needed.</p>
+
+<h3>Risk Roadmap with LLM Relevance</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">4. RISK ROADMAP</span>                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Data Exfiltration via Skills</span>  (<span class="t-red">relevance: 85%</span>)                   <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">file_read, skill_connections</span>                                   <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: Running tests requires reading source files which may include</span>        <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">secrets. If skill_connections is also granted, those files could be</span>       <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">sent externally through email or Slack.</span>                                   <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Supply Chain Attack</span>  (<span class="t-red">relevance: 80%</span>)                              <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">web_access, file_write, shell_execution</span>                        <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: Fixing tests often entails installing/updating dependencies.</span>        <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">That combination maps closely to a supply-chain attack vector.</span>           <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Remote Code Execution</span>  (<span class="t-yellow">relevance: 60%</span>)                         <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">web_access, shell_execution</span>                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: The task uses shell commands. If web content is fetched and</span>          <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">executed, full compromise is possible. Plausible but less direct.</span>         <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-high">[HIGH]</span> <span class="t-bold">Local Filesystem Compromise</span>  (<span class="t-red">relevance: 70%</span>)                        <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">web_access, file_write</span>                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: The agent may write patches or downloaded resources to disk.</span>         <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-high">[HIGH]</span> <span class="t-bold">Privilege Escalation</span>  (<span class="t-dim">relevance: 35%</span>)                                 <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">shell_execution, system_modification</span>                           <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: Shell is needed, but system modification is not.</span>                    <span class="box">│</span></div>
+
+<div class="warn-box"><strong>Key insight:</strong> Supply Chain Attack gets <strong>80% relevance</strong> here (vs 10% for research) because installing dependencies during test fixing is a realistic workflow. The same risk path, completely different relevance depending on the task.</div>
+
+<h3>Convergence Suggestions</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">5. CONVERGENCE SUGGESTIONS</span>                                                   <span class="box">│</span>
+<span class="box">│</span>   1. [<span class="t-critical">DISABLE</span>] web_access           <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                  <span class="box">│</span>
+<span class="box">│</span>   2. [<span class="t-critical">DISABLE</span>] skill_connections    <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                  <span class="box">│</span>
+<span class="box">│</span>   3. [<span class="t-critical">DISABLE</span>] system_modification  <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                  <span class="box">│</span>
+<span class="box">│</span>   4. [<span class="t-yellow t-bold">RESTRICT</span>] file_read           <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-yellow">LIMITED</span>                   <span class="box">│</span>
+<span class="box">│</span>   5. [<span class="t-yellow t-bold">RESTRICT</span>] file_write          <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-yellow">LIMITED</span>                   <span class="box">│</span>
+<span class="box">│</span>   6. [<span class="t-yellow t-bold">RESTRICT</span>] shell_execution     <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-yellow">LIMITED</span>                   <span class="box">│</span>
+<span class="box">│</span>   7. [<span class="t-yellow t-bold">RESTRICT</span>] network_outbound    <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-yellow">LIMITED</span>                   <span class="box">│</span></div>
+
+<p><strong>3 DISABLE + 4 RESTRICT</strong> &mdash; the system correctly keeps shell_execution, file_read, and file_write active (restricted) while disabling unrelated permissions.</p>
+
+<hr>
+
+<h2>6.3 Use Case 3: Communication Task (Highest Risk Relevance)</h2>
+
+<p><strong>Setup:</strong> Same over-permissioned agent (all 7 UNRESTRICTED)<br>
+<strong>Task:</strong> "Send an email to the team with the weekly status update."<br>
+<strong>Key difference:</strong> Only needs <strong>1 permission</strong> (skill_connections). Data Exfiltration via Skills gets <strong>95% relevance</strong> &mdash; the highest of any scenario &mdash; because the task <em>actually uses</em> the communication channel.</p>
+
+<div class="cmd"><span class="prompt">$</span> python main.py configs/overpermissioned.json "Send an email to the team with the weekly status update"</div>
+
+<h3>Intent Analysis &amp; Minimum Permissions</h3>
+<div class="terminal"><span class="box">┌──────────────────────────────────────────────────────────────────────────────┐</span>
+<span class="box">│</span> <span class="t-cyan t-bold">CAPABILITY BOUNDARY CONSULTANT</span>  <span class="t-dim">[llm]</span>                                        <span class="box">│</span>
+<span class="box">├──────────────────────────────────────────────────────────────────────────────┤</span>
+<span class="box">│</span> <span class="t-magenta t-bold">1. TASK INTENT ANALYSIS</span>                                                      <span class="box">│</span>
+<span class="box">│</span>   Task: <span class="t-white t-bold">Send an email to the team with the weekly status update</span>              <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   Detected intents:                                                          <span class="box">│</span>
+<span class="box">│</span>     <span class="t-green">+</span> Communication                                                          <span class="box">│</span>
+<span class="box">│</span>     <span class="t-green">+</span> Content Creation                                                       <span class="box">│</span>
+<span class="box">├──────────────────────────────────────────────────────────────────────────────┤</span>
+<span class="box">│</span> <span class="t-magenta t-bold">2. MINIMUM REQUIRED PERMISSIONS</span>                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-green">+</span> skill_connections      [<span class="t-yellow">LIMITED</span>]                                         <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Use the integrated email-sending capability to compose and send a single</span> <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">weekly status email. No broader mailbox access or file operations.</span>       <span class="box">│</span></div>
+
+<p><strong>Only 1 permission</strong> needed &mdash; the tightest minimum set of any task. The LLM determines that even network_outbound is unnecessary (the email skill handles the network layer internally).</p>
+
+<h3>Excess Permissions &amp; Deviation</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">3. EXCESS PERMISSIONS DETECTED</span>                                               <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> web_access             [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> file_read              [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> file_write             [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> shell_execution        [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> skill_connections      [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Scope exceeds (LIMITED enough)</span> <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> network_outbound       [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>   <span class="t-red">!</span> system_modification    [<span class="t-red">UNRESTRICTED</span>]  <span class="t-dim">Not required for this task</span>     <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   Deviation Index: [<span class="t-critical">████████████████████████████</span><span class="t-dim">░░</span>] <span class="t-critical">94% (CRITICAL)</span>           <span class="box">│</span></div>
+
+<p><strong>94% CRITICAL</strong> &mdash; the highest deviation of any task. 6 of 7 permissions should be fully DISABLED, 1 should be RESTRICTED.</p>
+
+<h3>Risk Roadmap with LLM Relevance</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">4. RISK ROADMAP</span>                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Data Exfiltration via Skills</span>  (<span class="t-red">relevance: 95%</span>)                   <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">file_read, skill_connections</span>                                   <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: This task explicitly uses an email/communication skill. If the</span>      <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">agent can read local files and forward content to a connected skill,</span>     <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">sensitive data could be sent unintentionally or via prompt injection.</span>    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">The combination directly maps to the email-sending workflow.</span>             <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Data Exfiltration</span>  (<span class="t-red">relevance: 85%</span>)                              <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">file_read, network_outbound</span>                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: Sending an email may read a local draft or notes. If the agent</span>     <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">has broad file_read plus network_outbound, it could read other</span>           <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">sensitive local files and send them externally.</span>                          <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Remote Code Execution</span>  (<span class="t-dim">relevance: 5%</span>)                              <span class="box">│</span>
+<span class="box">│</span>     Requires: <span class="t-dim">web_access, shell_execution</span>                                    <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: Fetching and executing web content is not needed to compose or</span>     <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">send a weekly status email. Relevance is minimal.</span>                       <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-critical">[CRITICAL]</span> <span class="t-bold">Supply Chain Attack</span>  (<span class="t-dim">relevance: 5%</span>)                               <span class="box">│</span>
+<span class="box">│</span>     <span class="t-dim">Why: Downloading packages is unrelated to sending a status email.</span>       <span class="box">│</span>
+<span class="box">│</span>                                                                              <span class="box">│</span>
+<span class="box">│</span>   <span class="t-high">[HIGH]</span> <span class="t-bold">Local Filesystem Compromise</span>  (<span class="t-dim">relevance: 20%</span>)                          <span class="box">│</span>
+<span class="box">│</span>   <span class="t-high">[HIGH]</span> <span class="t-bold">Privilege Escalation</span>  (<span class="t-dim">relevance: 2%</span>)                                   <span class="box">│</span>
+<span class="box">│</span>   <span class="t-medium">[MEDIUM]</span> <span class="t-bold">Persistent Backdoor</span>  (<span class="t-dim">relevance: 3%</span>)                                 <span class="box">│</span></div>
+
+<div class="warn-box"><strong>Key insight:</strong> Same "Data Exfiltration via Skills" risk path gets <span class="t-red t-bold">95%</span> relevance here vs <span class="t-dim">12%</span> for research vs <span class="t-red">85%</span> for code execution. The LLM understands that an email task <em>inherently operates</em> through the skill_connections channel, making data leakage far more plausible. Meanwhile, Remote Code Execution drops to <span class="t-dim">5%</span> (vs 60% for code execution) because there is no reason to run shell commands when sending an email.</div>
+
+<h3>Convergence Suggestions</h3>
+<div class="terminal"><span class="box">│</span> <span class="t-magenta t-bold">5. CONVERGENCE SUGGESTIONS</span>                                                   <span class="box">│</span>
+<span class="box">│</span>   1. [<span class="t-critical">DISABLE</span>] web_access            <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                 <span class="box">│</span>
+<span class="box">│</span>   2. [<span class="t-critical">DISABLE</span>] file_read             <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                 <span class="box">│</span>
+<span class="box">│</span>   3. [<span class="t-critical">DISABLE</span>] file_write            <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                 <span class="box">│</span>
+<span class="box">│</span>   4. [<span class="t-critical">DISABLE</span>] shell_execution       <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                 <span class="box">│</span>
+<span class="box">│</span>   5. [<span class="t-critical">DISABLE</span>] network_outbound      <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                 <span class="box">│</span>
+<span class="box">│</span>   6. [<span class="t-critical">DISABLE</span>] system_modification   <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-green">DISABLED</span>                 <span class="box">│</span>
+<span class="box">│</span>   7. [<span class="t-yellow t-bold">RESTRICT</span>] skill_connections    <span class="t-red">UNRESTRICTED</span> -&gt; <span class="t-yellow">LIMITED</span>                  <span class="box">│</span></div>
+
+<p><strong>6 DISABLE + 1 RESTRICT</strong> &mdash; the most aggressive convergence of any task. Only skill_connections survives, restricted to LIMITED scope (single email, specific recipients only).</p>
+
+<hr>
+
+<h2>6.4 Use Case Comparison Summary</h2>
+
+<table>
+  <tr><th>Metric</th><th>Research Task</th><th>Code Execution</th><th>Email Task</th></tr>
+  <tr><td>Task</td><td>Search + summarize</td><td>Run tests + fix</td><td>Send status email</td></tr>
+  <tr><td>Intents</td><td>info_gathering, content_creation</td><td>code_execution, file_management</td><td>communication, content_creation</td></tr>
+  <tr><td>Required permissions</td><td>2 (web, network)</td><td>4 (shell, file_r, file_w, network)</td><td>1 (skills)</td></tr>
+  <tr><td>Deviation index</td><td><span class="t-critical">84% CRITICAL</span></td><td><span class="t-red">72% HIGH</span></td><td><span class="t-critical">94% CRITICAL</span></td></tr>
+  <tr><td>Risk paths</td><td>7</td><td>5</td><td>7</td></tr>
+  <tr><td>Top risk relevance</td><td><span class="t-dim">RCE 20%</span></td><td><span class="t-red">Data Exfil via Skills 85%</span></td><td><span class="t-red t-bold">Data Exfil via Skills 95%</span></td></tr>
+  <tr><td>Lowest risk relevance</td><td><span class="t-dim">Priv Escalation 6%</span></td><td><span class="t-dim">Priv Escalation 35%</span></td><td><span class="t-dim">Priv Escalation 2%</span></td></tr>
+  <tr><td>DISABLE suggestions</td><td>5</td><td>3</td><td>6</td></tr>
+  <tr><td>RESTRICT suggestions</td><td>2</td><td>4</td><td>1</td></tr>
+</table>
+
+<div class="note-box">This table demonstrates that the system produces <strong>task-aware, proportional responses</strong> &mdash; not a one-size-fits-all alert. The same risk path gets completely different relevance scores depending on whether the task actually involves that attack surface.</div>
+
+<hr>
+
+<h2>6.5 Use Case 5: LLM vs Keyword Mode Comparison (Ambiguous Task)</h2>
+
+<p><strong>Task:</strong> "Find competitor pricing strategy and prepare a brief for the exec team"</p>
+<p>This task contains no keywords the regex matcher recognizes. "Find" alone is not in the keyword list, and "prepare a brief" matches nothing.</p>
+
+<div class="comparison-grid">
+  <div>
+    <div class="comparison-label">Keyword Mode (--no-llm)</div>
+    <div class="terminal">{
+  "analysis_mode": "<span class="t-yellow">keyword</span>",
+  "confidence": <span class="t-red">0.0</span>,
+  "task_intents": [
+    "information_gathering"
+  ],
+  "deviation_index": <span class="t-yellow">0.48</span>
+}
+
+<span class="t-dim">Confidence: 0% (fallback)
+Misses "content_creation" entirely
+Deviation dampened from ~96% to 48%</span></div>
+  </div>
+  <div>
+    <div class="comparison-label">LLM Mode (default)</div>
+    <div class="terminal">{
+  "analysis_mode": "<span class="t-cyan">llm</span>",
+  "confidence": <span class="t-green">0.8</span>,
+  "task_intents": [
+    "information_gathering",
+    "content_creation"
+  ],
+  "deviation_index": <span class="t-red">0.94</span>
+}
+
+<span class="t-dim">Confidence: 80% (semantic understanding)
+Correctly identifies both intents
+Accurate deviation: 94%</span></div>
+  </div>
+</div>
+
+<hr>
+
+<h2>6.6 Use Case 6: Well-Aligned Configuration</h2>
+
+<p><strong>Setup:</strong> Minimal research profile (4 permissions active, all LIMITED)<br>
+<strong>Task:</strong> Same research task as Use Case 1</p>
+
+<div class="terminal"><span class="t-dim">$</span> <span class="t-green">python main.py --json configs/minimal_research.json "Help me search online..."</span>
+
+{
+  "analysis_mode": "<span class="t-cyan">llm</span>",
+  "confidence": <span class="t-green">0.85</span>,
+  "deviation_index": <span class="t-yellow">0.38</span>,                   <span class="t-dim">← 38% MODERATE (vs 84% CRITICAL above)</span>
+  "excess_permissions": [
+    {"category": "file_read",  "excess_reason": "<span class="t-dim">Not required for this task</span>"},
+    {"category": "file_write", "excess_reason": "<span class="t-dim">Not required for this task</span>"}
+  ],
+  "risk_paths": [                            <span class="t-dim">← Only 2 (vs 7 above)</span>
+    {"name": "Data Exfiltration",            "level": "<span class="t-critical">critical</span>"},
+    {"name": "Local Filesystem Compromise",  "level": "<span class="t-high">high</span>"}
+  ],
+  "suggestions": [                           <span class="t-dim">← Only 2 (vs 7 above)</span>
+    {"action": "<span class="t-critical">Disable</span>", "permission": "file_read"},
+    {"action": "<span class="t-critical">Disable</span>", "permission": "file_write"}
+  ]
+}</div>
+
+<div class="note-box">The system does not over-alarm when permissions are already reasonable. Only 2 minor adjustments suggested.</div>
+
+<hr>
+
+<h2>6.7 Use Case 7: JSON Output for Automation</h2>
+
+<div class="cmd"><span class="prompt">$</span> python main.py --json configs/overpermissioned.json "Run the test suite"</div>
+
+<p>Produces a complete machine-readable JSON report:</p>
+
+<div class="terminal">{
+  "<span class="t-cyan">task_description</span>": "Run the test suite",
+  "<span class="t-cyan">analysis_mode</span>": "<span class="t-green">llm</span>",
+  "<span class="t-cyan">confidence</span>": <span class="t-green">0.85</span>,
+  "<span class="t-cyan">task_intents</span>": ["<span class="t-green">code_execution</span>"],
+  "<span class="t-cyan">deviation_index</span>": <span class="t-red">0.88</span>,
+  "<span class="t-cyan">required_permissions</span>": [
+    {"category": "shell_execution", "scope": "<span class="t-yellow">limited</span>", "details": "..."},
+    {"category": "file_read",       "scope": "<span class="t-yellow">limited</span>", "details": "..."}
+  ],
+  "<span class="t-cyan">excess_permissions</span>": [ <span class="t-dim">... 7 entries with excess_reason ...</span> ],
+  "<span class="t-cyan">risk_paths</span>": [ <span class="t-dim">... with name, level, involved_permissions, attack_scenario ...</span> ],
+  "<span class="t-cyan">risk_relevance</span>": {
+    "Data Exfiltration via Skills": {
+      "relevance": <span class="t-red">0.85</span>,
+      "reasoning": "<span class="t-dim">Running tests requires reading source files which may include secrets...</span>"
+    },
+    <span class="t-dim">...</span>
+  },
+  "<span class="t-cyan">suggestions</span>": [ <span class="t-dim">... action, permission, current_scope, recommended_scope, reason ...</span> ],
+  "<span class="t-cyan">summary_note</span>": "..."
+}</div>
+
+<p>Suitable for:</p>
+<table>
+  <tr><td>CI/CD pipeline integration</td><td>Block deploys when deviation &gt; threshold</td></tr>
+  <tr><td>Automated permission auditing</td><td>Scheduled scans across agent configs</td></tr>
+  <tr><td>Dashboard visualization</td><td>Feed into Grafana, Datadog, or custom UI</td></tr>
+  <tr><td>Alerting systems</td><td>Trigger alerts on CRITICAL risk paths</td></tr>
+</table>
+
+<hr>
+
+<h2>6.8 Use Case 8: Session Drift Tracking</h2>
+
+<p>Each analysis is automatically logged to <code>session_history.jsonl</code>. After multiple analyses, view the cumulative drift:</p>
+
+<div class="cmd"><span class="prompt">$</span> python main.py --history</div>
+
+<div class="terminal">
+  <span class="t-white t-bold">SESSION DRIFT SUMMARY (5 analyses)</span>
+  <span class="t-dim">─────────────────────────────────────</span>
+  Suggestions dismissed: <span class="t-red">3/5 (60%)</span>
+  Average deviation index: <span class="t-red">72%</span>
+  Total risk paths flagged: <span class="t-yellow">28</span>
+  <span class="t-red">Warning: Majority of suggestions dismissed — permission surface unchanged.</span>
+</div>
+
+<p>Each log entry records:</p>
+<div class="terminal">{
+  "<span class="t-cyan">timestamp</span>": "<span class="t-dim">2026-03-27T14:30:00+00:00</span>",
+  "<span class="t-cyan">profile</span>": "Typical Over-Authorized Agent",
+  "<span class="t-cyan">task</span>": "Help me search online for information on competitors...",
+  "<span class="t-cyan">confidence</span>": <span class="t-green">0.85</span>,
+  "<span class="t-cyan">deviation_index</span>": <span class="t-red">0.84</span>,
+  "<span class="t-cyan">risk_path_count</span>": <span class="t-yellow">7</span>,
+  "<span class="t-cyan">critical_risks</span>": <span class="t-critical">4</span>,
+  "<span class="t-cyan">suggestion_count</span>": 7,
+  "<span class="t-cyan">user_choice</span>": "<span class="t-red">keep</span>",
+  "<span class="t-cyan">excess_categories</span>": ["<span class="t-dim">web_access</span>", "<span class="t-dim">file_read</span>", "<span class="t-dim">file_write</span>", "<span class="t-dim">...</span>"]
+}</div>
+
+<div class="warn-box">This directly connects to the Anthropic research data: as users dismiss suggestions over time, the permission surface remains unchanged and risk accumulates. The drift summary makes this pattern visible.</div>
+
+<hr>
+
+<h1>7. Before vs After</h1>
+
+<h2>7.1 The 6-Step Flow</h2>
+<table>
+  <tr><th>Step</th><th>Spec Requirement</th><th>PoC Implementation</th></tr>
+  <tr><td>1</td><td>Agent initiates task</td><td>Interactive CLI or <code>python main.py &lt;config&gt; &lt;task&gt;</code></td></tr>
+  <tr><td>2</td><td>System analyzes task intent</td><td>LLM extracts intents + minimum permissions with confidence</td></tr>
+  <tr><td>3</td><td>Analyze current permissions</td><td>Loads JSON profile, compares all 7 categories and scopes</td></tr>
+  <tr><td>4</td><td>Display consultant panel</td><td>5-section colored panel with deviation bar + relevance scores</td></tr>
+  <tr><td>5</td><td>Provide suggestions</td><td>Ordered DISABLE/RESTRICT with reasons</td></tr>
+  <tr><td>6</td><td>User selection (non-blocking)</td><td>[A] Accept / [P] Partial / [K] Keep current</td></tr>
+</table>
+
+<h2>7.2 Innovation Points Delivered</h2>
+<table>
+  <tr><th>Innovation</th><th>How Delivered</th></tr>
+  <tr><td>Show risk paths (not just list permissions)</td><td>7 risk paths with attack scenarios + LLM relevance scoring</td></tr>
+  <tr><td>Provide minimum permission set</td><td>LLM-generated minimum permissions with context-aware details</td></tr>
+  <tr><td>Quantify over-authorization</td><td>Weighted deviation index (0-100%) with visual bar</td></tr>
+  <tr><td>Track permission drift</td><td>Session history JSONL log with drift summary</td></tr>
+</table>
+
+<hr>
+
+<h1>8. Test Results</h1>
+
+<div class="terminal"><span class="t-dim">$</span> <span class="t-green">python -m pytest tests/ -v</span>
+
+tests/test_consultant.py::test_all_risk_paths_involve_excess       <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_ambiguous_task_dampens_deviation     <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_ambiguous_task_has_low_confidence    <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_code_execution_task                 <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_excess_permissions_preserve_details  <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_no_duplicate_risk_paths             <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_report_has_summary_note             <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_research_task_with_minimal_config    <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_research_task_with_overpermissioned  <span class="t-green">PASSED</span>
+tests/test_consultant.py::test_suggestions_disable_before_restrict  <span class="t-green">PASSED</span>
+tests/test_display.py::test_box_line_consistent_width              <span class="t-green">PASSED</span>
+tests/test_display.py::test_box_line_has_right_border              <span class="t-green">PASSED</span>
+tests/test_display.py::test_box_line_long_content_still_closes     <span class="t-green">PASSED</span>
+tests/test_display.py::test_visible_len_plain_text                 <span class="t-green">PASSED</span>
+tests/test_display.py::test_visible_len_with_ansi                  <span class="t-green">PASSED</span>
+tests/test_permission_config.py <span class="t-dim">(8 tests)</span>                           <span class="t-green">PASSED</span>
+tests/test_risk_engine.py <span class="t-dim">(12 tests)</span>                               <span class="t-green">PASSED</span>
+tests/test_task_analyzer.py <span class="t-dim">(12 tests)</span>                             <span class="t-green">PASSED</span>
+
+<span class="t-green t-bold">============================== 47 passed in 0.04s ==============================</span></div>
+
+<table>
+  <tr><th>Module</th><th>Tests</th><th>Coverage</th></tr>
+  <tr><td><code>test_consultant.py</code></td><td>10</td><td>Full pipeline, ambiguity, excess detection, confidence</td></tr>
+  <tr><td><code>test_risk_engine.py</code></td><td>12</td><td>All 7 risk paths, excess filtering, deviation index</td></tr>
+  <tr><td><code>test_task_analyzer.py</code></td><td>12</td><td>All 6 intent types, fallback, confidence, multi-intent</td></tr>
+  <tr><td><code>test_permission_config.py</code></td><td>8</td><td>File validation, missing fields, bad values</td></tr>
+  <tr><td><code>test_display.py</code></td><td>5</td><td>ANSI stripping, box borders, width consistency</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>47</strong></td><td><strong>All pass in 0.04s</strong></td></tr>
+</table>
+
+<hr>
+
+<h1>9. CLI Reference</h1>
+
+<div class="terminal"><span class="t-dim"># Interactive demo (LLM-powered, prompts for profile and task)</span>
+<span class="t-green">python main.py</span>
+
+<span class="t-dim"># Interactive demo, keyword-only (no API key needed)</span>
+<span class="t-green">python main.py --no-llm</span>
+
+<span class="t-dim"># Non-interactive analysis</span>
+<span class="t-green">python main.py configs/overpermissioned.json "Your task description"</span>
+
+<span class="t-dim"># JSON output (machine-readable, for automation)</span>
+<span class="t-green">python main.py --json configs/overpermissioned.json "Your task description"</span>
+
+<span class="t-dim"># Keyword-only, non-interactive</span>
+<span class="t-green">python main.py --no-llm configs/overpermissioned.json "Your task description"</span>
+
+<span class="t-dim"># Show session drift summary</span>
+<span class="t-green">python main.py --history</span></div>
+
+<h2>Environment Requirements</h2>
+<table>
+  <tr><th>Requirement</th><th>Details</th></tr>
+  <tr><td>Python</td><td>3.10+</td></tr>
+  <tr><td>Dependencies</td><td><code>openai</code> SDK (<code>pip install openai</code>)</td></tr>
+  <tr><td>API Key</td><td><code>OPENAI_API_KEY</code> env var (for LLM mode; keyword mode works without it)</td></tr>
+</table>
+
+<hr>
+
+<h1>10. Conclusion</h1>
+
+<p>This PoC demonstrates that a <strong>Capability Boundary Consultant</strong> can effectively:</p>
+
+<p>1. <span class="t-green t-bold">Detect permission over-authorization</span> by comparing task intent against current configuration<br>
+   2. <span class="t-yellow t-bold">Quantify risk</span> through a weighted deviation index and per-risk relevance scoring<br>
+   3. <span class="t-cyan t-bold">Provide actionable convergence</span> with specific DISABLE/RESTRICT recommendations<br>
+   4. <span class="t-magenta t-bold">Operate non-blockingly</span> &mdash; advising users without preventing task execution</p>
+
+<p>The dual-mode architecture (LLM + keyword) provides both <strong>flexibility</strong> (LLM handles ambiguous, paraphrased tasks) and <strong>reliability</strong> (keyword fallback when no API is available), while the risk relevance scoring ensures users see the most contextually relevant threats first rather than a flat list of all possible attack paths.</p>
+
+</body>
+</html>

@@ -36,6 +36,7 @@ def report_to_dict(report: ConsultantReport) -> dict:
     """Serialize a ConsultantReport to a JSON-safe dictionary."""
     return {
         "task_description": report.task_description,
+        "analysis_mode": report.analysis_mode,
         "confidence": report.confidence,
         "task_intents": [i.value for i in report.task_intents],
         "deviation_index": report.deviation_index,
@@ -76,6 +77,7 @@ def report_to_dict(report: ConsultantReport) -> dict:
             }
             for s in report.suggestions
         ],
+        "risk_relevance": report.risk_relevance,
         "summary_note": report.summary_note,
     }
 
@@ -287,14 +289,14 @@ def apply_suggestions(config: PermissionConfig, report, indices: list[int] | Non
     print()
 
 
-def run_demo():
+def run_demo(use_llm: bool = True):
     """Main demo loop."""
     profiles = load_config_profiles()
     if not profiles:
         print("Error: No configuration profiles found in configs/ directory.")
         sys.exit(1)
 
-    consultant = Consultant()
+    consultant = Consultant(use_llm=use_llm)
     display = ConsultantDisplay()
 
     print("\n" + "=" * 60)
@@ -351,10 +353,10 @@ def run_demo():
     print("Done. Thank you for using Agent Permission Guard.\n")
 
 
-def run_non_interactive(task: str, config_path: str, json_output: bool = False):
+def run_non_interactive(task: str, config_path: str, json_output: bool = False, use_llm: bool = True):
     """Non-interactive mode for scripting/testing."""
     config = PermissionConfig.from_json_file(config_path)
-    consultant = Consultant()
+    consultant = Consultant(use_llm=use_llm)
 
     report = consultant.analyze(task, config)
 
@@ -369,6 +371,7 @@ def run_non_interactive(task: str, config_path: str, json_output: bool = False):
     # Print machine-readable summary
     print("\n--- SUMMARY ---")
     print(f"Task: {report.task_description}")
+    print(f"Analysis Mode: {report.analysis_mode}")
     print(f"Confidence: {report.confidence:.0%}")
     print(f"Intents: {', '.join(i.value for i in report.task_intents)}")
     print(f"Deviation Index: {report.deviation_index:.0%}")
@@ -383,12 +386,21 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
 
+    use_llm = "--no-llm" not in flags
+
     if "--help" in flags or "-h" in {sys.argv[1]} if len(sys.argv) > 1 else set():
         print("Usage:")
-        print("  python main.py                                  # Interactive demo")
+        print("  python main.py                                  # Interactive demo (LLM default)")
+        print("  python main.py --no-llm                         # Interactive, keyword-only")
         print("  python main.py <config.json> <task>             # Non-interactive")
         print("  python main.py --json <config.json> <task>      # JSON output")
+        print("  python main.py --no-llm <config.json> <task>    # Keyword-only, non-interactive")
         print("  python main.py --history                        # Show session drift summary")
+        print()
+        print("Flags:")
+        print("  --no-llm    Use keyword matching instead of LLM (no API key needed)")
+        print("  --json      Output analysis as JSON (non-interactive mode)")
+        print("  --history   Show session drift summary and exit")
         print()
         print("Examples:")
         print('  python main.py configs/overpermissioned.json "Search for competitor info"')
@@ -398,6 +410,6 @@ if __name__ == "__main__":
     elif len(args) >= 2:
         config_path = args[0]
         task_description = " ".join(args[1:])
-        run_non_interactive(task_description, config_path, json_output="--json" in flags)
+        run_non_interactive(task_description, config_path, json_output="--json" in flags, use_llm=use_llm)
     else:
-        run_demo()
+        run_demo(use_llm=use_llm)

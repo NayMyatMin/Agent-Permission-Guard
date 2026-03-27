@@ -1,2 +1,2 @@
 # Agent Permission Guard
-# No external dependencies required - uses Python 3.10+ standard library only
+openai>=1.0.0

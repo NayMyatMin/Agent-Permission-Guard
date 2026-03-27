@@ -14,7 +14,7 @@ CONFIG_DIR = Path(__file__).parent.parent / "configs"
 class TestConsultant(unittest.TestCase):
 
     def setUp(self):
-        self.consultant = Consultant()
+        self.consultant = Consultant(use_llm=False)
 
     def _load_overpermissioned(self) -> PermissionConfig:
         return PermissionConfig.from_json_file(CONFIG_DIR / "overpermissioned.json")

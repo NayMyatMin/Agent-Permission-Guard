@@ -12,19 +12,22 @@ from .models import (
 from .permission_config import PermissionConfig
 from .risk_engine import RiskEngine
 from .task_analyzer import TaskAnalyzer, TaskAnalysisResult
+from .llm_analyzer import llm_analyze_task, llm_score_risk_relevance, is_llm_available
 
 
 class Consultant:
     """Orchestrates task analysis, risk evaluation, and suggestion generation."""
 
-    def __init__(self) -> None:
-        self._task_analyzer = TaskAnalyzer()
+    def __init__(self, use_llm: bool = True, model: str = "gpt-5-mini") -> None:
+        self._keyword_analyzer = TaskAnalyzer()
         self._risk_engine = RiskEngine()
+        self._use_llm = use_llm and is_llm_available()
+        self._model = model
 
     def analyze(self, task_description: str, config: PermissionConfig) -> ConsultantReport:
         """Run full analysis: task intent -> permission comparison -> risk paths -> suggestions."""
-        # Step 1: Analyze task intent
-        analysis = self._task_analyzer.analyze(task_description)
+        # Step 1: Analyze task intent (LLM default, keyword fallback)
+        analysis, mode = self._analyze_task(task_description)
 
         # Step 2: Identify excess permissions
         excess = self._find_excess_permissions(config, analysis)
@@ -32,17 +35,35 @@ class Consultant:
         # Step 3: Evaluate risk paths (only for excess permissions)
         risk_paths = self._risk_engine.evaluate(config, analysis.required_categories)
 
-        # Step 4: Compute deviation index (dampen for ambiguous tasks)
+        # Step 4: Score risk relevance via LLM (if available)
+        risk_relevance = {}
+        if self._use_llm and risk_paths:
+            scores = llm_score_risk_relevance(task_description, risk_paths, self._model)
+            if scores:
+                risk_relevance = {
+                    name: {"relevance": r.relevance, "reasoning": r.reasoning}
+                    for name, r in scores.items()
+                }
+                # Re-sort: within same severity tier, higher relevance first
+                risk_paths.sort(
+                    key=lambda rp: (
+                        rp.level.weight,
+                        scores.get(rp.name, type('', (), {'relevance': 0.5})()).relevance,
+                    ),
+                    reverse=True,
+                )
+
+        # Step 5: Compute deviation index (dampen for ambiguous tasks)
         deviation_index = self._risk_engine.compute_deviation_index(
             config, analysis.required_categories
         )
         if analysis.is_ambiguous:
             deviation_index = round(deviation_index * 0.5, 2)
 
-        # Step 5: Generate convergence suggestions
+        # Step 6: Generate convergence suggestions
         suggestions = self._generate_suggestions(config, analysis, excess)
 
-        # Step 6: Create summary note
+        # Step 7: Create summary note
         summary_note = self._generate_summary_note(analysis, excess, risk_paths)
 
         return ConsultantReport(
@@ -55,8 +76,19 @@ class Consultant:
             risk_paths=risk_paths,
             suggestions=suggestions,
             confidence=analysis.confidence,
+            analysis_mode=mode,
+            risk_relevance=risk_relevance,
             summary_note=summary_note,
         )
+
+    def _analyze_task(self, task_description: str) -> tuple[TaskAnalysisResult, str]:
+        """Analyze task, trying LLM first then falling back to keywords."""
+        if self._use_llm:
+            result = llm_analyze_task(task_description, self._model)
+            if result is not None:
+                return result, "llm"
+
+        return self._keyword_analyzer.analyze(task_description), "keyword"
 
     def _find_excess_permissions(
         self,

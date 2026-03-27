@@ -128,4 +128,6 @@ class ConsultantReport:
     risk_paths: list[RiskPath]
     suggestions: list[ConvergenceSuggestion]
     confidence: float = 1.0
+    analysis_mode: str = "keyword"
+    risk_relevance: dict = field(default_factory=dict)
     summary_note: str = ""
