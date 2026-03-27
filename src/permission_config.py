@@ -43,29 +43,69 @@ class PermissionConfig:
     def from_json_file(cls, path: str | Path) -> PermissionConfig:
         """Load a permission configuration from a JSON file."""
         path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Permission config file not found: {path}\n"
+                f"Available configs should be in the configs/ directory."
+            )
+
         with open(path) as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in {path}: {e}") from e
 
-        profile_name = data.get("profile_name", path.stem)
-        permissions = []
-        for entry in data.get("permissions", []):
-            category = PermissionCategory(entry["category"])
-            scope = PermissionScope(entry["scope"])
-            details = entry.get("details", "")
-            permissions.append(Permission(category, scope, details))
-
-        return cls(permissions, profile_name)
+        return cls._parse_config(data, fallback_name=path.stem)
 
     @classmethod
     def from_dict(cls, data: dict) -> PermissionConfig:
         """Load a permission configuration from a dictionary."""
-        profile_name = data.get("profile_name", "default")
+        return cls._parse_config(data, fallback_name="default")
+
+    @classmethod
+    def _parse_config(cls, data: dict, fallback_name: str) -> PermissionConfig:
+        """Parse and validate a config dictionary into a PermissionConfig."""
+        if not isinstance(data, dict):
+            raise ValueError("Config must be a JSON object.")
+
+        profile_name = data.get("profile_name", fallback_name)
+        raw_permissions = data.get("permissions", [])
+
+        if not isinstance(raw_permissions, list):
+            raise ValueError("'permissions' must be a list of permission entries.")
+
         permissions = []
-        for entry in data.get("permissions", []):
-            category = PermissionCategory(entry["category"])
-            scope = PermissionScope(entry["scope"])
-            details = entry.get("details", "")
-            permissions.append(Permission(category, scope, details))
+        valid_categories = {e.value for e in PermissionCategory}
+        valid_scopes = {e.value for e in PermissionScope}
+
+        for i, entry in enumerate(raw_permissions):
+            if not isinstance(entry, dict):
+                raise ValueError(f"Permission entry {i} must be an object, got {type(entry).__name__}.")
+
+            if "category" not in entry:
+                raise ValueError(f"Permission entry {i} is missing required field 'category'.")
+            if "scope" not in entry:
+                raise ValueError(f"Permission entry {i} is missing required field 'scope'.")
+
+            cat_val = entry["category"]
+            scope_val = entry["scope"]
+
+            if cat_val not in valid_categories:
+                raise ValueError(
+                    f"Permission entry {i}: unknown category '{cat_val}'. "
+                    f"Valid: {', '.join(sorted(valid_categories))}"
+                )
+            if scope_val not in valid_scopes:
+                raise ValueError(
+                    f"Permission entry {i}: unknown scope '{scope_val}'. "
+                    f"Valid: {', '.join(sorted(valid_scopes))}"
+                )
+
+            permissions.append(Permission(
+                PermissionCategory(cat_val),
+                PermissionScope(scope_val),
+                entry.get("details", ""),
+            ))
 
         return cls(permissions, profile_name)
 

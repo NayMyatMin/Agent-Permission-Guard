@@ -32,10 +32,12 @@ class Consultant:
         # Step 3: Evaluate risk paths (only for excess permissions)
         risk_paths = self._risk_engine.evaluate(config, analysis.required_categories)
 
-        # Step 4: Compute deviation index
+        # Step 4: Compute deviation index (dampen for ambiguous tasks)
         deviation_index = self._risk_engine.compute_deviation_index(
             config, analysis.required_categories
         )
+        if analysis.is_ambiguous:
+            deviation_index = round(deviation_index * 0.5, 2)
 
         # Step 5: Generate convergence suggestions
         suggestions = self._generate_suggestions(config, analysis, excess)
@@ -52,6 +54,7 @@ class Consultant:
             deviation_index=deviation_index,
             risk_paths=risk_paths,
             suggestions=suggestions,
+            confidence=analysis.confidence,
             summary_note=summary_note,
         )
 
@@ -66,7 +69,12 @@ class Consultant:
 
         for perm in config.active_permissions:
             if perm.category not in required_categories:
-                excess.append(perm)
+                excess.append(Permission(
+                    perm.category,
+                    perm.scope,
+                    perm.details,
+                    excess_reason="Not required for this task",
+                ))
             else:
                 # Category is required but scope may be too broad
                 required_perm = next(
@@ -81,7 +89,8 @@ class Consultant:
                     excess.append(Permission(
                         perm.category,
                         perm.scope,
-                        f"Scope is UNRESTRICTED but task only needs LIMITED: {required_perm.details}",
+                        perm.details,
+                        excess_reason=f"Scope exceeds task needs (LIMITED sufficient: {required_perm.details})",
                     ))
 
         return excess

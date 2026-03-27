@@ -61,6 +61,7 @@ class Permission:
     category: PermissionCategory
     scope: PermissionScope
     details: str = ""
+    excess_reason: str = ""
 
     @property
     def is_active(self) -> bool:
@@ -126,4 +127,5 @@ class ConsultantReport:
     deviation_index: float
     risk_paths: list[RiskPath]
     suggestions: list[ConvergenceSuggestion]
+    confidence: float = 1.0
     summary_note: str = ""

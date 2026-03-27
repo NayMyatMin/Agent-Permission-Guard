@@ -50,6 +50,9 @@ class TestConsultant(unittest.TestCase):
         # Deviation index should be high
         self.assertGreater(report.deviation_index, 0.3)
 
+        # High confidence for keyword-matched task
+        self.assertEqual(report.confidence, 1.0)
+
     def test_research_task_with_minimal_config(self):
         """Minimal config should show no excess permissions for research."""
         config = self._load_minimal()
@@ -101,6 +104,42 @@ class TestConsultant(unittest.TestCase):
         # Shell should be required, not flagged as excess
         required_cats = {p.category for p in report.required_permissions}
         self.assertIn(PermissionCategory.SHELL_EXECUTION, required_cats)
+
+    def test_ambiguous_task_has_low_confidence(self):
+        """An unrecognized task should have low confidence and dampened deviation."""
+        config = self._load_overpermissioned()
+        report = self.consultant.analyze("Help me with something.", config)
+        self.assertLess(report.confidence, 0.5)
+
+    def test_ambiguous_task_dampens_deviation(self):
+        """Ambiguous tasks should have lower deviation than recognized tasks."""
+        config = self._load_overpermissioned()
+        ambiguous = self.consultant.analyze("Help me with something.", config)
+        specific = self.consultant.analyze("Search online for information.", config)
+        # Ambiguous gets dampened, so it should be lower (or at most equal)
+        self.assertLessEqual(ambiguous.deviation_index, specific.deviation_index)
+
+    def test_excess_permissions_preserve_original_details(self):
+        """Excess permissions should keep original details, not overwrite them."""
+        config = self._load_overpermissioned()
+        report = self.consultant.analyze("Search online for information.", config)
+
+        for perm in report.excess_permissions:
+            # details should be from the original config, not implementation logic
+            self.assertNotIn("Scope is UNRESTRICTED but task only needs", perm.details)
+            # excess_reason should carry the explanation
+            self.assertTrue(len(perm.excess_reason) > 0)
+
+    def test_no_duplicate_risk_paths(self):
+        """No two risk paths should have the same involved_permissions set."""
+        config = self._load_overpermissioned()
+        report = self.consultant.analyze("Search online for information.", config)
+
+        seen = set()
+        for rp in report.risk_paths:
+            key = frozenset(rp.involved_permissions)
+            self.assertNotIn(key, seen, f"Duplicate risk path permissions: {rp.name}")
+            seen.add(key)
 
 
 if __name__ == "__main__":

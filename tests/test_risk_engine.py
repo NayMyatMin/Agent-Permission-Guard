@@ -36,6 +36,17 @@ class TestRiskEngine(unittest.TestCase):
         risk_names = [r.name for r in risks]
         self.assertIn("Data Exfiltration via Skills", risk_names)
 
+    def test_no_duplicate_risk_for_file_read_plus_skills(self):
+        """FILE_READ + SKILL_CONNECTIONS should produce exactly one risk path, not two."""
+        config = _make_config([
+            (PermissionCategory.FILE_READ, PermissionScope.UNRESTRICTED),
+            (PermissionCategory.SKILL_CONNECTIONS, PermissionScope.UNRESTRICTED),
+        ])
+        risks = self.engine.evaluate(config)
+        skill_risks = [r for r in risks
+                       if set(r.involved_permissions) == {PermissionCategory.FILE_READ, PermissionCategory.SKILL_CONNECTIONS}]
+        self.assertEqual(len(skill_risks), 1)
+
     def test_remote_code_execution_detected(self):
         config = _make_config([
             (PermissionCategory.WEB_ACCESS, PermissionScope.UNRESTRICTED),

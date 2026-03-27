@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 import sys
 
 from .models import ConsultantReport, PermissionScope, RiskLevel
+
+_ANSI_ESCAPE_RE = re.compile(r'\033\[[0-9;]*m')
 
 
 # ANSI color codes
@@ -86,6 +89,18 @@ class ConsultantDisplay:
                 f"    {self._c(_Colors.GREEN, '+')} {label}", width
             ))
 
+        if report.confidence < 0.5:
+            lines.append(self._box_line("", width))
+            lines.append(self._box_line(
+                f"  {self._c(_Colors.YELLOW + _Colors.BOLD, 'LOW CONFIDENCE')} "
+                f"- No specific keywords matched. Using conservative fallback.",
+                width,
+            ))
+            lines.append(self._box_line(
+                f"  Deviation index dampened to reduce false positives.",
+                width,
+            ))
+
         lines.append(self._box_separator(width))
 
         # Section 2: Required Permissions (minimum set)
@@ -110,9 +125,10 @@ class ConsultantDisplay:
                 lines.append(self._box_line(
                     f"  {self._c(_Colors.RED, '!')} {perm.category.value:<22} [{scope_str}]", width
                 ))
-                if perm.details:
+                display_reason = perm.excess_reason or perm.details
+                if display_reason:
                     lines.append(self._box_line(
-                        f"    {self._c(_Colors.DIM, perm.details)}", width
+                        f"    {self._c(_Colors.DIM, display_reason)}", width
                     ))
         else:
             lines.append(self._box_line(
@@ -253,6 +269,11 @@ class ConsultantDisplay:
 
         return f"[{bar}] {pct} ({label_str})"
 
+    @staticmethod
+    def _visible_len(text: str) -> int:
+        """Return the visible length of text, ignoring ANSI escape codes."""
+        return len(_ANSI_ESCAPE_RE.sub('', text))
+
     def _box_top(self, width: int) -> str:
         return "┌" + "─" * width + "┐"
 
@@ -263,11 +284,16 @@ class ConsultantDisplay:
         return "├" + "─" * width + "┤"
 
     def _box_line(self, content: str, width: int) -> str:
-        """Create a box line. Width is approximate due to ANSI codes."""
-        return f"│ {content}"
+        """Create a box line with right border, padding to width."""
+        # Inner area is width chars: leading space + content + padding + trailing border
+        # "│" + " " + content + padding + "│" => visible width = width + 2
+        visible = self._visible_len(content)
+        inner = width - 1  # space for content after leading " "
+        padding = max(0, inner - visible)
+        return f"│ {content}{' ' * padding}│"
 
     def _box_center(self, content: str, width: int) -> str:
-        return f"│ {content}"
+        return self._box_line(content, width)
 
     def _section_header(self, title: str, width: int) -> str:
         return self._box_line(

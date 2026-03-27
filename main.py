@@ -7,16 +7,20 @@ detects permission over-authorization, and provides convergence suggestions.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.consultant import Consultant
 from src.display import ConsultantDisplay
+from src.models import ConsultantReport
 from src.permission_config import PermissionConfig
 
 
 CONFIG_DIR = Path(__file__).parent / "configs"
+HISTORY_FILE = Path(__file__).parent / "session_history.jsonl"
 
 EXAMPLE_TASKS = [
     "Help me search online for information on competitors and summarize it.",
@@ -26,6 +30,102 @@ EXAMPLE_TASKS = [
     "Configure the CI/CD pipeline and update deployment settings.",
     "Read the project files and create a summary document.",
 ]
+
+
+def report_to_dict(report: ConsultantReport) -> dict:
+    """Serialize a ConsultantReport to a JSON-safe dictionary."""
+    return {
+        "task_description": report.task_description,
+        "confidence": report.confidence,
+        "task_intents": [i.value for i in report.task_intents],
+        "deviation_index": report.deviation_index,
+        "required_permissions": [
+            {
+                "category": p.category.value,
+                "scope": p.scope.value,
+                "details": p.details,
+            }
+            for p in report.required_permissions
+        ],
+        "excess_permissions": [
+            {
+                "category": p.category.value,
+                "scope": p.scope.value,
+                "details": p.details,
+                "excess_reason": p.excess_reason,
+            }
+            for p in report.excess_permissions
+        ],
+        "risk_paths": [
+            {
+                "name": rp.name,
+                "level": rp.level.value,
+                "description": rp.description,
+                "involved_permissions": [c.value for c in rp.involved_permissions],
+                "attack_scenario": rp.attack_scenario,
+            }
+            for rp in report.risk_paths
+        ],
+        "suggestions": [
+            {
+                "action": s.action_label,
+                "permission": s.permission_category.value,
+                "current_scope": s.current_scope.value,
+                "recommended_scope": s.recommended_scope.value,
+                "reason": s.reason,
+            }
+            for s in report.suggestions
+        ],
+        "summary_note": report.summary_note,
+    }
+
+
+def log_session_history(report: ConsultantReport, user_choice: str, profile_name: str):
+    """Append analysis result to session history for drift tracking."""
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "profile": profile_name,
+        "task": report.task_description,
+        "confidence": report.confidence,
+        "deviation_index": report.deviation_index,
+        "risk_path_count": len(report.risk_paths),
+        "critical_risks": sum(1 for rp in report.risk_paths if rp.level.value == "critical"),
+        "suggestion_count": len(report.suggestions),
+        "user_choice": user_choice,
+        "excess_categories": [p.category.value for p in report.excess_permissions],
+    }
+    with open(HISTORY_FILE, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def print_drift_summary():
+    """Print a summary of permission drift from session history."""
+    if not HISTORY_FILE.exists():
+        return
+
+    entries = []
+    with open(HISTORY_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entries.append(json.loads(line))
+
+    if len(entries) < 2:
+        return
+
+    dismissed = sum(1 for e in entries if e["user_choice"] == "keep")
+    total = len(entries)
+    avg_deviation = sum(e["deviation_index"] for e in entries) / total
+    total_risks = sum(e["risk_path_count"] for e in entries)
+
+    print(f"\n  SESSION DRIFT SUMMARY ({total} analyses)")
+    print(f"  ─────────────────────────────────────")
+    print(f"  Suggestions dismissed: {dismissed}/{total} ({dismissed/total:.0%})")
+    print(f"  Average deviation index: {avg_deviation:.0%}")
+    print(f"  Total risk paths flagged: {total_risks}")
+    if dismissed > total / 2:
+        print(f"  Warning: Majority of suggestions dismissed — permission surface unchanged.")
+    print()
 
 
 def load_config_profiles() -> dict[str, Path]:
@@ -218,6 +318,7 @@ def run_demo():
         # User choice
         if report.suggestions:
             choice = handle_user_choice(report)
+            choice_label = {"A": "accept_all", "P": "partial", "K": "keep"}[choice]
 
             if choice == "A":
                 print("\n  All suggestions accepted.")
@@ -230,7 +331,11 @@ def run_demo():
                 print("\n  Keeping current configuration. Proceeding with task.")
                 print("  (No permissions were modified)\n")
         else:
+            choice_label = "aligned"
             print("\n  Permissions are well-aligned. Proceeding with task.\n")
+
+        # Log to session history
+        log_session_history(report, choice_label, config.profile_name)
 
         # Continue or exit
         print("─" * 60)
@@ -241,22 +346,30 @@ def run_demo():
         except (EOFError, KeyboardInterrupt):
             break
 
-    print("\nDone. Thank you for using Agent Permission Guard.\n")
+    # Show drift summary at end of session
+    print_drift_summary()
+    print("Done. Thank you for using Agent Permission Guard.\n")
 
 
-def run_non_interactive(task: str, config_path: str):
+def run_non_interactive(task: str, config_path: str, json_output: bool = False):
     """Non-interactive mode for scripting/testing."""
     config = PermissionConfig.from_json_file(config_path)
     consultant = Consultant()
-    display = ConsultantDisplay()
 
     report = consultant.analyze(task, config)
+
+    if json_output:
+        print(json.dumps(report_to_dict(report), indent=2))
+        return
+
+    display = ConsultantDisplay()
     print(display.render(report))
     print(display.render_user_choice())
 
     # Print machine-readable summary
     print("\n--- SUMMARY ---")
     print(f"Task: {report.task_description}")
+    print(f"Confidence: {report.confidence:.0%}")
     print(f"Intents: {', '.join(i.value for i in report.task_intents)}")
     print(f"Deviation Index: {report.deviation_index:.0%}")
     print(f"Risk Paths: {len(report.risk_paths)}")
@@ -267,17 +380,24 @@ def run_non_interactive(task: str, config_path: str):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 3:
-        # Non-interactive: python main.py <config_file> <task_description>
-        config_path = sys.argv[1]
-        task_description = " ".join(sys.argv[2:])
-        run_non_interactive(task_description, config_path)
-    elif len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+
+    if "--help" in flags or "-h" in {sys.argv[1]} if len(sys.argv) > 1 else set():
         print("Usage:")
-        print("  python main.py                           # Interactive demo")
-        print("  python main.py <config.json> <task>      # Non-interactive")
+        print("  python main.py                                  # Interactive demo")
+        print("  python main.py <config.json> <task>             # Non-interactive")
+        print("  python main.py --json <config.json> <task>      # JSON output")
+        print("  python main.py --history                        # Show session drift summary")
         print()
         print("Examples:")
         print('  python main.py configs/overpermissioned.json "Search for competitor info"')
+        print('  python main.py --json configs/overpermissioned.json "Search for competitor info"')
+    elif "--history" in flags:
+        print_drift_summary()
+    elif len(args) >= 2:
+        config_path = args[0]
+        task_description = " ".join(args[1:])
+        run_non_interactive(task_description, config_path, json_output="--json" in flags)
     else:
         run_demo()

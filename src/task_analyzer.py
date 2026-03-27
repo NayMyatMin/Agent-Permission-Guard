@@ -120,8 +120,7 @@ class TaskAnalyzer:
                 if rule.capability not in matched_capabilities:
                     matched_capabilities.append(rule.capability)
                 for perm in rule.required_permissions:
-                    existing = required_permissions.get(perm.category)
-                    if existing is None or _scope_priority(perm.scope) > _scope_priority(existing.scope):
+                    if perm.category not in required_permissions:
                         required_permissions[perm.category] = perm
 
         if not matched_capabilities:
@@ -130,11 +129,18 @@ class TaskAnalyzer:
                 PermissionCategory.FILE_READ, PermissionScope.LIMITED,
                 "Read-only access to current directory"
             )
+            return TaskAnalysisResult(
+                task_description=task_description,
+                intents=matched_capabilities,
+                required_permissions=list(required_permissions.values()),
+                confidence=0.0,
+            )
 
         return TaskAnalysisResult(
             task_description=task_description,
             intents=matched_capabilities,
             required_permissions=list(required_permissions.values()),
+            confidence=1.0,
         )
 
     def _matches_keywords(self, text: str, keywords: list[str]) -> bool:
@@ -152,6 +158,7 @@ class TaskAnalysisResult:
     task_description: str
     intents: list[TaskCapability]
     required_permissions: list[Permission]
+    confidence: float = 1.0
 
     @property
     def intent_labels(self) -> list[str]:
@@ -161,11 +168,6 @@ class TaskAnalysisResult:
     def required_categories(self) -> set[PermissionCategory]:
         return {p.category for p in self.required_permissions}
 
-
-def _scope_priority(scope: PermissionScope) -> int:
-    """Higher number = broader scope."""
-    return {
-        PermissionScope.DISABLED: 0,
-        PermissionScope.LIMITED: 1,
-        PermissionScope.UNRESTRICTED: 2,
-    }[scope]
+    @property
+    def is_ambiguous(self) -> bool:
+        return self.confidence < 0.5

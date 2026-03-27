@@ -46,6 +46,16 @@ class TestTaskAnalyzer(unittest.TestCase):
         self.assertIn(TaskCapability.INFORMATION_GATHERING, result.intents)
         self.assertIn(PermissionCategory.FILE_READ, result.required_categories)
 
+    def test_fallback_has_zero_confidence(self):
+        result = self.analyzer.analyze("Do something vague and unspecific.")
+        self.assertEqual(result.confidence, 0.0)
+        self.assertTrue(result.is_ambiguous)
+
+    def test_matched_task_has_full_confidence(self):
+        result = self.analyzer.analyze("Search online for information.")
+        self.assertEqual(result.confidence, 1.0)
+        self.assertFalse(result.is_ambiguous)
+
     def test_multiple_intents(self):
         result = self.analyzer.analyze(
             "Search for data online, download it, and send the report via email."
@@ -62,6 +72,15 @@ class TestTaskAnalyzer(unittest.TestCase):
         result = self.analyzer.analyze("Search online for information.")
         for perm in result.required_permissions:
             self.assertEqual(perm.scope, PermissionScope.LIMITED)
+
+    def test_duplicate_categories_resolved(self):
+        """When multiple rules match the same category, it should appear only once."""
+        result = self.analyzer.analyze(
+            "Search for data online, download it, and save it."
+        )
+        cats = [p.category for p in result.required_permissions]
+        # No duplicate categories
+        self.assertEqual(len(cats), len(set(cats)))
 
 
 if __name__ == "__main__":

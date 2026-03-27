@@ -29,16 +29,18 @@ _RISK_PATH_DEFINITIONS: list[dict] = [
     },
     {
         "name": "Data Exfiltration via Skills",
-        "description": "Local file content could be leaked through connected skills.",
+        "description": "Local file content could be leaked through connected skills or messaging channels.",
         "level": RiskLevel.CRITICAL,
         "involved_permissions": [
             PermissionCategory.FILE_READ,
             PermissionCategory.SKILL_CONNECTIONS,
         ],
         "attack_scenario": (
-            "The agent reads local files and passes their content to a connected skill "
-            "(e.g., email, messaging, or cloud storage) which sends data externally. "
-            "The user may not realize file contents are being transmitted."
+            "The agent reads local files (credentials, private documents, source code) and "
+            "passes their content to a connected skill (email, Slack, cloud storage) which "
+            "sends data externally. This can happen through prompt injection, misinterpreted "
+            "task scope, or compromised skill behavior. The user may not realize file contents "
+            "are being transmitted through communication channels."
         ),
     },
     {
@@ -68,20 +70,6 @@ _RISK_PATH_DEFINITIONS: list[dict] = [
             "The agent downloads a package or script from the internet, writes it to the "
             "local filesystem, and then executes it. A compromised or typosquatted package "
             "could install malware, backdoors, or exfiltrate data."
-        ),
-    },
-    {
-        "name": "Privacy Leak via Communication",
-        "description": "Private file contents could be sent through messaging channels.",
-        "level": RiskLevel.HIGH,
-        "involved_permissions": [
-            PermissionCategory.FILE_READ,
-            PermissionCategory.SKILL_CONNECTIONS,
-        ],
-        "attack_scenario": (
-            "The agent reads private documents and sends their content through a connected "
-            "communication skill (email, Slack, etc.). This may happen if the agent "
-            "misinterprets task scope or is manipulated via prompt injection."
         ),
     },
     {
