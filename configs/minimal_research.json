@@ -1,0 +1,41 @@
+{
+  "profile_name": "Minimal Research Profile",
+  "description": "A tightly scoped configuration suitable for online research and summarization tasks.",
+  "permissions": [
+    {
+      "category": "web_access",
+      "scope": "limited",
+      "details": "Read-only access to web search and public pages"
+    },
+    {
+      "category": "file_read",
+      "scope": "limited",
+      "details": "Read source materials in current project directory only"
+    },
+    {
+      "category": "file_write",
+      "scope": "limited",
+      "details": "Write to designated output directory only"
+    },
+    {
+      "category": "network_outbound",
+      "scope": "limited",
+      "details": "HTTPS GET requests to search engines and public sites"
+    },
+    {
+      "category": "shell_execution",
+      "scope": "disabled",
+      "details": "Shell access not needed for research tasks"
+    },
+    {
+      "category": "skill_connections",
+      "scope": "disabled",
+      "details": "No skill connections needed for research tasks"
+    },
+    {
+      "category": "system_modification",
+      "scope": "disabled",
+      "details": "No system modifications needed for research tasks"
+    }
+  ]
+}

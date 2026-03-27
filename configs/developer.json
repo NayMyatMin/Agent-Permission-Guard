@@ -1,0 +1,41 @@
+{
+  "profile_name": "Developer Workflow Profile",
+  "description": "A moderately permissioned configuration for development tasks. Includes shell and file access but limits web and communication capabilities.",
+  "permissions": [
+    {
+      "category": "web_access",
+      "scope": "limited",
+      "details": "Access to package registries and documentation sites only"
+    },
+    {
+      "category": "file_read",
+      "scope": "unrestricted",
+      "details": "Read files across the project workspace"
+    },
+    {
+      "category": "file_write",
+      "scope": "limited",
+      "details": "Write to project workspace directories only"
+    },
+    {
+      "category": "shell_execution",
+      "scope": "limited",
+      "details": "Execute approved build, test, and development commands"
+    },
+    {
+      "category": "skill_connections",
+      "scope": "limited",
+      "details": "Connected to version control (git) skill only"
+    },
+    {
+      "category": "network_outbound",
+      "scope": "limited",
+      "details": "Outbound to package registries (npm, pypi) and git remotes"
+    },
+    {
+      "category": "system_modification",
+      "scope": "disabled",
+      "details": "System modification not permitted in development workflow"
+    }
+  ]
+}

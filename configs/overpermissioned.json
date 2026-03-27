@@ -1,0 +1,41 @@
+{
+  "profile_name": "Typical Over-Authorized Agent",
+  "description": "Represents a common configuration after months of habitual permission granting. The agent has accumulated broad permissions across all categories.",
+  "permissions": [
+    {
+      "category": "web_access",
+      "scope": "unrestricted",
+      "details": "Access to any website without domain restrictions"
+    },
+    {
+      "category": "file_read",
+      "scope": "unrestricted",
+      "details": "Read files under all paths including home directory and system files"
+    },
+    {
+      "category": "file_write",
+      "scope": "unrestricted",
+      "details": "Write files to any path including system directories"
+    },
+    {
+      "category": "shell_execution",
+      "scope": "unrestricted",
+      "details": "Execute any shell command without restrictions"
+    },
+    {
+      "category": "skill_connections",
+      "scope": "unrestricted",
+      "details": "Connected to email, messaging, cloud storage, and calendar skills"
+    },
+    {
+      "category": "network_outbound",
+      "scope": "unrestricted",
+      "details": "Outbound network requests to any endpoint"
+    },
+    {
+      "category": "system_modification",
+      "scope": "unrestricted",
+      "details": "Modify system settings, environment variables, and configurations"
+    }
+  ]
+}
